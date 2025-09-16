@@ -1,87 +1,115 @@
 const container = document.getElementById("meme-container");
 
-// Proxy + Imgur search for "cringe"
-const proxyUrl = 'https://api.allorigins.win/raw?url=';
-const imgurSearch = encodeURIComponent('https://imgur.com/search/score/all/cringe');
+// Public GIPHY API key (works for everyone)
+const apiKey = "dc6zaTOxFJmzC";
+
+// Cringe search terms
+const tags = [
+  "cringe",
+  "awkward",
+  "secondhand embarrassment",
+  "teen fail",
+  "embarrassing moment",
+  "why did I do that",
+  "social anxiety"
+];
+
+// Pick random tag
+function getRandomTag() {
+  return tags[Math.floor(Math.random() * tags.length)];
+}
+
+// GIPHY Random URL
+function getGiphyUrl() {
+  const tag = encodeURIComponent(getRandomTag());
+  return `https://api.giphy.com/v1/gifs/random?api_key=${apiKey}&tag=${tag}&rating=g&lang=en`;
+}
 
 // Load more when scrolling
 window.addEventListener("scroll", () => {
   if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 600) {
-    fetchMeme();
+    fetchMemeWithRetry();
   }
 });
 
-// Load first meme immediately
-fetchMeme();
+// Start loading immediately
+fetchMemeWithRetry();
 
-async function fetchMeme() {
-  try {
-    // Fetch Imgur search page
-    const res = await fetch(proxyUrl + imgurSearch);
-    
-    if (!res.ok) throw new Error(`Failed to load`);
+// Auto-retry every 2 seconds if failed
+async function fetchMemeWithRetry() {
+  let attempts = 0;
+  while (attempts < 100) { // Infinite loop (safe because async)
+    try {
+      const res = await fetch(getGiphyUrl(), {
+        method: 'GET',
+        cache: 'no-cache'
+      });
 
-    const html = await res.text();
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-    // Extract all image URLs using regex
-    const imgMatches = html.match(/https:\/\/i\.imgur\.com\/[a-zA-Z0-9]+\.jpg/g);
-    const gifMatches = html.match(/https:\/\/i\.imgur\.com\/[a-zA-Z0-9]+\.gif/g);
-    
-    const allImages = [...(imgMatches || []), ...(gifMatches || [])];
-    
-    if (allImages.length === 0) {
-      // Fallback memes if none found
-      const fallbacks = [
-        'https://i.imgur.com/3f7d7e7o6u001.jpg',
-        'https://i.imgur.com/8l9kx7q6s6v01.jpg',
-        'https://i.imgur.com/1hjwv4z6g9t01.jpg'
-      ];
-      return displayMeme(fallbacks[Math.floor(Math.random() * fallbacks.length)], "Cringe Meme");
+      const data = await res.json();
+
+      if (!data.data || !data.data.images) {
+        throw new Error("No data returned");
+      }
+
+      const gif = data.data;
+      const imageUrl = gif.images.original.url;
+      const title = gif.title || `${getRandomTag().toUpperCase()} Moment`;
+
+      // Create and display meme
+      const card = document.createElement("div");
+      card.className = "meme-card";
+
+      const titleEl = document.createElement("div");
+      titleEl.className = "title";
+      titleEl.textContent = title;
+      card.appendChild(titleEl);
+
+      const img = document.createElement("img");
+      img.src = imageUrl + "&t=" + Date.now(); // Unique URL
+      img.alt = title;
+      img.loading = "lazy";
+      img.onerror = () => {
+        img.src = "https://via.placeholder.com/500x300?text=Failed+to+load+meme";
+      };
+      card.appendChild(img);
+
+      container.appendChild(card);
+
+      // Insert ad every 3rd item
+      if (container.children.length % 3 === 0) {
+        const ad = document.createElement("div");
+        ad.className = "ad-unit";
+        ad.innerHTML = "[ GOOGLE ADSENSE WILL GO HERE ]";
+        container.appendChild(ad);
+      }
+
+      return; // Success → stop retrying
+
+    } catch (err) {
+      console.warn("Attempt failed:", err.message);
+      attempts++;
+
+      // Show loading indicator only once
+      if (attempts === 1 && document.querySelectorAll(".loading").length === 0) {
+        const loader = document.createElement("div");
+        loader.className = "loading";
+        loader.id = "auto-retry-loader";
+        loader.innerHTML = "🔁 Fetching cringe... trying again...";
+        container.appendChild(loader);
+      }
+
+      // Wait 2 seconds before retry
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
-
-    // Pick random image
-    const imageUrl = allImages[Math.floor(Math.random() * allImages.length)];
-    const title = "Cringe Meme #" + Date.now().toString().slice(-5);
-
-    displayMeme(imageUrl, title);
-
-  } catch (err) {
-    console.error("Fetch failed:", err);
-
-    // Show fallback even if everything breaks
-    const fallbacks = [
-      'https://i.imgur.com/5n6m7p8q9r001.jpg',
-      'https://i.imgur.com/mZMqXJy.jpg'
-    ];
-    displayMeme(fallbacks[Math.floor(Math.random() * fallbacks.length)], "Random Shame");
   }
-}
 
-function displayMeme(imgSrc, titleText) {
-  const card = document.createElement("div");
-  card.className = "meme-card";
-
-  const title = document.createElement("div");
-  title.className = "title";
-  title.textContent = titleText;
-  card.appendChild(title);
-
-  const img = document.createElement("img");
-  img.src = imgSrc + '?random=' + Date.now(); // Force freshness
-  img.alt = titleText;
-  img.loading = "lazy";
-  img.onerror = () => {
-    img.src = "https://via.placeholder.com/500x300?text=Image+Failed";
-  };
-  card.appendChild(img);
-
-  container.appendChild(card);
-
-  // Insert ad every 3rd item
-  if (container.children.length % 3 === 0) {
-    const ad = document.createElement("div");
-    ad.className = "ad-unit";
-    ad.innerHTML = "[ GOOGLE ADSENSE WILL GO HERE ]";
-    container.appendChild(ad);
-  }
+  // If all attempts fail (very rare)
+  const errorDiv = document.createElement("div");
+  errorDiv.style.color = "yellow";
+  errorDiv.style.textAlign = "center";
+  errorDiv.style.padding = "1rem";
+  errorDiv.innerHTML = "⏳ Still loading... keep this tab open.";
+  container.appendChild(errorDiv);
 }
