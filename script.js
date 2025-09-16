@@ -3,69 +3,40 @@ let after = "";
 const subreddits = ["cringetopia", "teenagers", "Hellpagedesign", "facebookstories"];
 const chosenSub = subreddits[Math.floor(Math.random() * subreddits.length)];
 
-// Show debug message
-console.log("App started. Loading memes from:", chosenSub);
+// 🔁 Use a working CORS proxy
+const proxy = 'https://api.allorigins.win/raw?url=';
+const redditUrl = encodeURIComponent(`https://www.reddit.com/r/${chosenSub}/hot.json?limit=10&after=${after}`);
 
-// Add error fallback
-function showError() {
-  const errorDiv = document.createElement("div");
-  errorDiv.className = "error";
-  errorDiv.innerHTML = `
-    <p style="color: red; font-size: 1.2rem;">⚠️ Failed to load memes.</p>
-    <p>Check your internet connection or try again later.</p>
-    <p><small>API may be blocked in your region.</small></p>
-  `;
-  container.appendChild(errorDiv);
-}
-
-// Load more when user scrolls
 window.addEventListener("scroll", () => {
   if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 600) {
     fetchMemes();
   }
 });
 
-// Try to load first batch
 fetchMemes();
 
 async function fetchMemes() {
   try {
-    // Add timeout to prevent hanging
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 sec timeout
-
-    const res = await fetch(`https://www.reddit.com/r/${chosenSub}/hot.json?limit=10&after=${after}`, {
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-    }
-
+    const res = await fetch(proxy + redditUrl);
+    
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    
     const json = await res.json();
     
     const posts = json.data.children;
     after = json.data.after;
 
-    if (posts.length === 0) {
-      console.warn("No posts found.");
+    if (!posts || posts.length === 0) {
+      console.warn("No posts returned");
       return;
     }
 
     posts.forEach((postObj, index) => {
       const post = postObj.data;
 
-      // Skip non-image posts
-      try {
-        const url = new URL(post.url);
-        if (!["i.redd.it", "v.redd.it"].includes(url.hostname)) return;
-      } catch (e) {
-        return;
-      }
+      // Only show i.redd.it image links
+      if (!post.url || !post.url.includes("i.redd.it")) return;
 
-      // Create meme card
       const card = document.createElement("div");
       card.className = "meme-card";
 
@@ -79,14 +50,13 @@ async function fetchMemes() {
       img.alt = "Cringe Meme";
       img.loading = "lazy";
       img.onerror = () => {
-        console.error("Image failed to load:", post.url);
-        img.src = "https://via.placeholder.com/500x300?text=Image+Failed";
+        img.src = "https://via.placeholder.com/500x300?text=Failed+to+load+image";
       };
       card.appendChild(img);
 
       container.appendChild(card);
 
-      // Insert ad every 3rd meme
+      // Insert ad placeholder every 3rd meme
       if ((index + 1) % 3 === 0) {
         const ad = document.createElement("div");
         ad.className = "ad-unit";
@@ -95,7 +65,17 @@ async function fetchMemes() {
       }
     });
   } catch (err) {
-    console.error("Error fetching memes:", err);
-    showError(); // Show error message
+    console.error("Fetch failed:", err);
+    
+    const errorDiv = document.createElement("div");
+    errorDiv.style.color = "red";
+    errorDiv.style.textAlign = "center";
+    errorDiv.style.padding = "2rem";
+    errorDiv.innerHTML = `
+      <strong>❌ Failed to load memes</strong><br>
+      Network issue or Reddit is blocked.<br>
+      Try on Wi-Fi or use a different device.
+    `;
+    container.appendChild(errorDiv);
   }
 }
